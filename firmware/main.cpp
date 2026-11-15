@@ -51,6 +51,7 @@ struct Settings
     int presetSlot = 0;
     // added in phase 4 test3 (new settings go at the end, so older saves load with these at default)
     int hpfFm = 0, hpfFmSrc = ks::HPF_FM_SELF, hpfSpread = 0;
+    int hpfSprFm = 0, hpfSprSrc = ks::HPF_SPR_MONO; // added in test4
 };
 Settings S;
 
@@ -111,7 +112,8 @@ static void FmtColor(char* s, int n, int v);
 #define PA(n, var) {n, &A.var, 0, 3, 0, kUpdNames, "", nullptr}
 ParamDef pHpf[] = {P("RES", hpfRes, 0, 100, 0, nullptr, "%"), P("DRIVE", hpfDrive, 0, 100, 0, nullptr, "%"),
                    P("AUDIO FM", hpfFm, 0, 100, 0, nullptr, "%"), P("FM SRC", hpfFmSrc, 0, ks::HPF_FM_NUM - 1, 0, ks::kHpfFmNames, ""),
-                   P("SPREAD", hpfSpread, -100, 100, 0, nullptr, ""),
+                   P("SPREAD", hpfSpread, -100, 100, 0, nullptr, ""), P("SPREAD FM", hpfSprFm, 0, 100, 0, nullptr, "%"),
+                   P("SPR SRC", hpfSprSrc, 0, ks::HPF_SPR_NUM - 1, 0, ks::kHpfSprNames, ""),
                    P("SLOPE", hpfSlope, 0, 1, 0, kSlopeNames, ""),
                    P("FILTERS", filters, 0, 1, 0, kFilterNames, ""), P("CV BASE", hpfBase, 0, 100, 0, nullptr, "%")};
 ParamDef pDrv[2][8] = {
@@ -209,7 +211,7 @@ struct BlockDef
     int         count;
 };
 const BlockDef kBlocks[B_COUNT] = {{"HOME", nullptr, 0},
-                                   {"HPF", pHpf, 8},
+                                   {"HPF", pHpf, 10},
                                    {"DRIVE A", pDrv[0], 8},
                                    {"DRIVE B", pDrv[1], 8},
                                    {"LPF", pLpf, 3},
@@ -314,6 +316,8 @@ static void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer
     p.hpfFm      = S.hpfFm * 0.01f;
     p.hpfFmSrc   = S.hpfFmSrc;
     p.hpfSpread  = S.hpfSpread * 0.01f;
+    p.hpfSprFm   = S.hpfSprFm * 0.01f;
+    p.hpfSprSrc  = S.hpfSprSrc;
     p.hpf24      = S.hpfSlope;
     p.filtersAll = S.filters == 0;
     p.lpfCut     = knob[5];

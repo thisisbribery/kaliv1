@@ -27,6 +27,14 @@ enum HpfFmSource
 };
 static const char* const kHpfFmNames[HPF_FM_NUM] = {"SELF", "CROSS", "MONO"};
 
+enum HpfSpreadSource
+{
+    HPF_SPR_MONO, // the sum: throws the stereo field around even on a mono mix
+    HPF_SPR_SIDE, // the stereo difference: only the wide parts move it
+    HPF_SPR_NUM
+};
+static const char* const kHpfSprNames[HPF_SPR_NUM] = {"MONO", "SIDE"};
+
 KS_BIG_BUFFER static float g_ksMotionMem[2 * Motion::kLen];
 KS_BIG_BUFFER static float g_ksResoMem[Reso::kMemLen];
 
@@ -39,6 +47,9 @@ struct ChainParams
     float hpfFm     = 0.f; // 0..1: the input audio into the HPF cutoff, up to +-6 octaves at full scale
     int   hpfFmSrc  = 0;   // HPF_FM_SELF / CROSS / MONO
     float hpfSpread = 0.f; // -1..1: L cutoff down and R up (or the reverse), up to 2 octaves each way
+    float hpfSprFm  = 0.f; // 0..1: the input audio into the spread: L and R cutoffs pushed in opposite
+                           // directions, up to +-4 octaves each per full-scale swing (Dual Dagger style)
+    int   hpfSprSrc = 0;   // HPF_SPR_MONO / HPF_SPR_SIDE
     bool  hpf24     = false;
     bool  filtersAll = true; // dry path gets the filters too
     float lpfCut    = 1.f;
@@ -103,11 +114,11 @@ class Chain
         const float hpfW   = CutoffToW(hpfOff ? 10.f : HpfHz(p.hpfCut));
         const float fmOct  = 6.f * p.hpfFm * p.hpfFm; // octaves per unit of audio
         const float sprOct = 2.f * clampf(p.hpfSpread, -1.f, 1.f);
-        const float sprL = exp2f(-sprOct), sprR = exp2f(sprOct);
+        const float sprFm  = 4.f * p.hpfSprFm * p.hpfSprFm; // octaves per unit of audio, each way
         const float hpfR   = hpfOff ? 0.f : Ms20Feedback(p.hpfRes);
         const float hpfDrv = dbToGain(24.f * clampf(p.hpfDrive, 0.f, 1.f));
         // the output soft clip comes in with DRIVE, and with audio FM (swept resonance throws big peaks)
-        const float hpfSat = clampf(fmaxf(p.hpfDrive, p.hpfFm) * 4.f, 0.f, 1.f);
+        const float hpfSat = clampf(fmaxf(p.hpfDrive, fmaxf(p.hpfFm, p.hpfSprFm)) * 4.f, 0.f, 1.f);
         const bool  lpfOff = p.lpfCut > 0.99f;
         const float lpfG   = CutoffToG(lpfOff ? 22000.f : LpfHz(p.lpfCut));
         const float lres   = lpfOff ? 0.f : p.lpfRes;
@@ -132,7 +143,14 @@ class Chain
         for(int i = 0; i < n; i++)
         {
             float xl = inL[i] * inTrim, xr = inR[i] * inTrim;
-            float ml = sprL, mr = sprR; // cutoff multipliers: spread, then audio-rate FM
+            // cutoff offsets in octaves: SPREAD (+ audio into it, L and R opposite), then AUDIO FM
+            float spr = sprOct;
+            if(sprFm > 0.f)
+            {
+                float sa = p.hpfSprSrc == HPF_SPR_SIDE ? 0.5f * (xl - xr) : 0.5f * (xl + xr);
+                spr += clampf(sprFm * sa, -4.f, 4.f);
+            }
+            float el = -spr, er = spr;
             if(fmOct > 0.f)
             {
                 float a = xl, b = xr;
@@ -143,8 +161,14 @@ class Chain
                 }
                 else if(p.hpfFmSrc == HPF_FM_MONO)
                     a = b = 0.5f * (xl + xr);
-                ml *= fastExp2(clampf(fmOct * a, -5.f, 5.f)); // at most +-5 octaves
-                mr *= fastExp2(clampf(fmOct * b, -5.f, 5.f));
+                el += clampf(fmOct * a, -5.f, 5.f); // at most +-5 octaves
+                er += clampf(fmOct * b, -5.f, 5.f);
+            }
+            float ml = 1.f, mr = 1.f;
+            if(el != 0.f || er != 0.f)
+            {
+                ml = fastExp2(clampf(el, -7.f, 7.f));
+                mr = fastExp2(clampf(er, -7.f, 7.f));
             }
             hl[i]    = hpf_[0].Process(xl, hpfW, hpfR, hpfDrv, hpfSat, p.hpf24, ml);
             hr[i]    = hpf_[1].Process(xr, hpfW, hpfR, hpfDrv, hpfSat, p.hpf24, mr);

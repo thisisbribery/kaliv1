@@ -5,7 +5,7 @@
 //   render in.wav out.wav key=value  renders a file through the chain
 //
 // Keys: mo mo.type mo.rate mo.fb mo.spread mo.chaos mo.pre re re.type re.note re.color re.damp re.detune
-//       re.freeze re.pre hpf res hdrv hfm hfm.src hspread hpf24 lpf lres lpf24 all(0/1) os(0/1) mix eqpow trim
+//       re.freeze re.pre hpf res hdrv hfm hfm.src hspread hsfm hsfm.src hpf24 lpf lres lpf24 all(0/1) os(0/1) mix eqpow trim
 //       a.type a.amt a.shape a.tone a.bias a.stereo a.mix a.trim  (same for b.)
 //       sq sq.comp sq.clip sq.ceil sq.out
 // Types by name: a.type=TANH, sq.comp=GLUE, sq.clip=TANH, a.stereo=SIDE
@@ -208,6 +208,8 @@ static void SetParam(ChainParams& p, const char* kv)
     else if(k == "hfm") p.hpfFm = f;
     else if(k == "hfm.src") p.hpfFmSrc = Lookup(v, kHpfFmNames, HPF_FM_NUM);
     else if(k == "hspread") p.hpfSpread = f;
+    else if(k == "hsfm") p.hpfSprFm = f;
+    else if(k == "hsfm.src") p.hpfSprSrc = Lookup(v, kHpfSprNames, HPF_SPR_NUM);
     else if(k == "mo") p.motion.amount = f;
     else if(k == "mo.type") p.motion.type = Lookup(v, kMotionTypeNames, MOTION_NUM_TYPES);
     else if(k == "mo.rate") p.motion.rate = f;
@@ -695,6 +697,44 @@ static int Test()
         bool  ok    = monoDb < -60.f && unevenDb > -30.f && effDb > -15.f;
         printf("mono in: L-R %.1f dB (stays centred) | 2 dB uneven in: L vs R shape %.1f dB (pushed apart) | "
                "FM 70%% vs off: %.1f dB %s\n", monoDb, unevenDb, effDb, ok ? "ok" : "FAIL");
+        fails += !ok;
+    }
+
+    // 8. Audio into SPREAD: a mono input comes out of the HPF as stereo (L and R pushed apart), stays
+    //    finite and bounded for every source; with SIDE a mono input isn't moved.
+    printf("\nHPF audio into SPREAD\n");
+    {
+        std::vector<float> m(l.size());
+        for(size_t i = 0; i < l.size(); i++)
+            m[i] = 0.5f * (l[i] + r[i]);
+        float lrDb[2] = {0.f, 0.f}, pk = 0.f;
+        bool  bad = false;
+        for(int src = 0; src < HPF_SPR_NUM; src++)
+            for(float amt : {0.4f, 1.f})
+            {
+                ChainParams p;
+                p.hpfCut = 0.4f; p.hpfRes = 0.75f; p.hpfSprFm = amt; p.hpfSprSrc = src;
+                p.squash.ceilingDb = 0.f; p.squash.clip = CLIP_HARD; p.squash.outDb = -24.f;
+                Run(p, m, m, ol, orr);
+                double d = 0, sg = 0;
+                for(size_t i = 4800; i < ol.size(); i++)
+                {
+                    if(!std::isfinite(ol[i]) || !std::isfinite(orr[i]))
+                        bad = true;
+                    pk = fmaxf(pk, fmaxf(fabsf(ol[i]), fabsf(orr[i])) * 15.85f);
+                    d += (ol[i] - orr[i]) * (ol[i] - orr[i]);
+                    sg += ol[i] * ol[i];
+                }
+                if(amt == 1.f)
+                    lrDb[src] = 10.f * log10f((float)(d / sg) + 1e-20f);
+                Run(p, l, r, ol, orr); // the real stereo loop too
+                for(size_t i = 4800; i < ol.size(); i++)
+                    if(!std::isfinite(ol[i]) || !std::isfinite(orr[i]))
+                        bad = true;
+            }
+        bool ok = !bad && pk <= 4.f && lrDb[HPF_SPR_MONO] > -12.f && lrDb[HPF_SPR_SIDE] < -60.f;
+        printf("mono in, MONO source: L-R %.1f dB (pushed apart) | SIDE source: L-R %.1f dB (untouched) | "
+               "peak %.2f %s %s\n", lrDb[0], lrDb[1], pk, bad ? "NaN" : "finite", ok ? "ok" : "FAIL");
         fails += !ok;
     }
 

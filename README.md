@@ -17,7 +17,7 @@ IN L/R
 
 Plus: six CV outs that follow the music (envelopes, transients, LFOs, chaos), two clock outs that work as LED level meters or gates, SMASH and BYPASS on the two buttons, autosave, and 8 preset slots.
 
-**Status:** phase 4 test3. Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
+**Status:** phase 4 test4. Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
 
 ## Contents
 
@@ -55,7 +55,7 @@ Needs macOS with `dfu-util` (`brew install dfu-util`) and a USB **data** cable. 
 **First install** (from stock Kali or anything older):
 
 ```bash
-tools/flash-kali.sh --first release/KaliSmash-phase4-test3.bin
+tools/flash-kali.sh --first release/KaliSmash-phase4-test4.bin
 ```
 
 When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It installs the bootloader, catches it as it starts and installs KALI SMASH.
@@ -63,7 +63,7 @@ When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It insta
 **Updates:**
 
 ```bash
-tools/flash-kali.sh release/KaliSmash-phase4-test3.bin
+tools/flash-kali.sh release/KaliSmash-phase4-test4.bin
 ```
 
 While it waits, press **RESET** on the Daisy board (no BOOT). SYSTEM → UPDATE → GO on the module is the button-free route.
@@ -128,6 +128,8 @@ An MS-20 style high-pass. The resonance feeds back through an asymmetric diode-s
 | AUDIO FM | 0-100% | the input audio into the cutoff, at audio rate: up to ±6 octaves per full-scale swing (capped at ±5). Gritty sidebands, and the cutoff jumps with every hit. The output soft-clip comes in with it |
 | FM SRC | SELF / CROSS / MONO | SELF: L audio moves the L cutoff, R moves R, so any imbalance in the mix pushes the two filters apart and the stereo field wobbles. CROSS: L moves R and R moves L, wilder. MONO: the sum moves both, stays centred |
 | SPREAD | -100..+100 | L cutoff down and R up (or the reverse), up to 2 octaves each way, QPAS style |
+| SPREAD FM | 0-100% | the input audio into SPREAD: L and R cutoffs pushed in opposite directions at audio rate, up to ±4 octaves each way. Chaotic stereo wildness, even from a mono mix (Dual Dagger style: audio into the peak spread rather than the cutoff) |
+| SPR SRC | MONO / SIDE | what drives SPREAD FM. MONO: the sum, works on anything. SIDE: the stereo difference, so only the wide parts throw it around |
 | SLOPE | 12 / 24 dB | 24 adds a clean 2-pole section in front |
 | FILTERS | ALL / WET | ALL: the dry path is filtered too (works like a DJ filter at any MIX). WET: only the effected signal |
 | CV BASE | 0-100% | added to the knob, see [CV in](#how-cv-in-works) |
@@ -361,7 +363,7 @@ The tests cover the oversampler null (wet and dry line up to the sample), drive 
 
 - **CPU:** worst case (both drives up, CHAOS and CHORD on, all outs) is about 193k instructions per 48-sample block in the emulator, an estimated 50-60% of the H750 on hardware. The drives and oversampler work a block at a time with one type decision per block; SQUASH uses fast log and exp.
 - **Levels:** the Bribes rule. Every drive gets louder as DRV rises, never quieter; only SQUASH catches the top.
-- **HPF audio FM:** each channel already has its own filter, so per-channel FM is all the stereo movement needs; SPREAD is a fixed L/R offset on top. The cutoff glides on the knob only (5 ms), so the FM isn't smoothed away, and it runs through a per-sample Pade tan instead of `tanf`.
+- **HPF audio FM:** each channel already has its own filter, so per-channel FM is all the stereo movement needs; SPREAD is a fixed L/R offset on top, and SPREAD FM moves that offset with the audio (the two cutoffs go opposite ways), which is what turns a mono mix into stereo chaos. The cutoff glides on the knob only (5 ms), so the FM isn't smoothed away, and it runs through a per-sample Pade tan instead of `tanf`.
 - **Output stages:** Kali's CV out stages invert (higher DAC code = lower voltage); the firmware flips it, so POS really is positive.
 
 `docs/DESIGN.md` has the full design, the reasoning behind each block and the hardware feedback that shaped each test build.
