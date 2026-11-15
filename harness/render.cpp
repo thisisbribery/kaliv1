@@ -5,7 +5,7 @@
 //   render in.wav out.wav key=value  renders a file through the chain
 //
 // Keys: mo mo.type mo.rate mo.fb mo.spread mo.chaos mo.pre re re.type re.note re.color re.damp re.detune
-//       re.freeze re.pre hpf res hdrv hpf24 lpf lres lpf24 all(0/1) os(0/1) mix eqpow trim
+//       re.freeze re.pre hpf res hdrv hfm hfm.src hspread hpf24 lpf lres lpf24 all(0/1) os(0/1) mix eqpow trim
 //       a.type a.amt a.shape a.tone a.bias a.stereo a.mix a.trim  (same for b.)
 //       sq sq.comp sq.clip sq.ceil sq.out
 // Types by name: a.type=TANH, sq.comp=GLUE, sq.clip=TANH, a.stereo=SIDE
@@ -205,6 +205,9 @@ static void SetParam(ChainParams& p, const char* kv)
     if(k == "hpf") p.hpfCut = f;
     else if(k == "res") p.hpfRes = f;
     else if(k == "hdrv") p.hpfDrive = f;
+    else if(k == "hfm") p.hpfFm = f;
+    else if(k == "hfm.src") p.hpfFmSrc = Lookup(v, kHpfFmNames, HPF_FM_NUM);
+    else if(k == "hspread") p.hpfSpread = f;
     else if(k == "mo") p.motion.amount = f;
     else if(k == "mo.type") p.motion.type = Lookup(v, kMotionTypeNames, MOTION_NUM_TYPES);
     else if(k == "mo.rate") p.motion.rate = f;
@@ -430,7 +433,7 @@ static int Test()
                 Ms20Hpf f;
                 ol.assign(zl.size(), 0.f);
                 for(size_t i = 0; i < zl.size(); i++)
-                    ol[i] = f.Process(0.f, CutoffToG(HpfHz(cut)), Ms20Feedback(res), 1.f, 0.f, false);
+                    ol[i] = f.Process(0.f, CutoffToW(HpfHz(cut)), Ms20Feedback(res), 1.f, 0.f, false);
                 float pk = 0.f;
                 int   zc = 0;
                 for(size_t i = 48000; i < ol.size(); i++)
@@ -626,6 +629,73 @@ static int Test()
         printf("transient gate blocks over %.0f s of loop: %d %s\n", l.size() / 48000.f, onsets,
                onsets > 10 ? "ok" : "FAIL");
         fails += !okr + (onsets <= 10);
+    }
+
+    // 7. HPF audio FM and spread: finite and bounded everywhere; SELF on a mono input stays centred,
+    //    SELF on an uneven input moves L and R apart; it changes the sound.
+    printf("\nHPF audio FM\n");
+    {
+        auto run = [&](float fm, int src, float spr, const std::vector<float>& a, const std::vector<float>& b,
+                       std::vector<float>& oa, std::vector<float>& ob) {
+            ChainParams p;
+            p.hpfCut = 0.35f; p.hpfRes = 0.7f; p.hpfFm = fm; p.hpfFmSrc = src; p.hpfSpread = spr;
+            p.squash.ceilingDb = 0.f; p.squash.clip = CLIP_HARD; p.squash.outDb = -24.f;
+            Run(p, a, b, oa, ob);
+        };
+        bool bad = false;
+        float pk = 0.f;
+        for(float fm : {0.3f, 0.7f, 1.f})
+            for(int src = 0; src < HPF_FM_NUM; src++)
+                for(float spr : {-1.f, 0.f, 1.f})
+                {
+                    run(fm, src, spr, l, r, ol, orr);
+                    for(size_t i = 4800; i < ol.size(); i++) // after SQUASH's output gain has settled
+                    {
+                        if(!std::isfinite(ol[i]) || !std::isfinite(orr[i]))
+                            bad = true;
+                        pk = fmaxf(pk, fmaxf(fabsf(ol[i]), fabsf(orr[i])) * 15.85f);
+                    }
+                }
+        printf("sweep fm x src x spread: %s, peak %.2f (pre-squash)\n", bad ? "NaN FAIL" : "finite ok", pk);
+        fails += bad || pk > 4.f;
+        std::vector<float> m(l.size()), o0l, o0r;
+        for(size_t i = 0; i < l.size(); i++)
+            m[i] = 0.5f * (l[i] + r[i]);
+        run(0.7f, HPF_FM_SELF, 0.f, m, m, ol, orr);
+        double d = 0, sg = 0;
+        for(size_t i = 4800; i < ol.size(); i++)
+        {
+            d += (ol[i] - orr[i]) * (ol[i] - orr[i]);
+            sg += ol[i] * ol[i];
+        }
+        float monoDb = 10.f * log10f((float)(d / sg) + 1e-20f);
+        std::vector<float> lr(l), rr2(r);
+        for(size_t i = 0; i < l.size(); i++)
+            rr2[i] = 0.8f * m[i]; // the same mix, right side 2 dB down: uneven
+        for(size_t i = 0; i < l.size(); i++)
+            lr[i] = m[i];
+        run(0.7f, HPF_FM_SELF, 0.f, lr, rr2, ol, orr);
+        d = sg = 0;
+        for(size_t i = 4800; i < ol.size(); i++)
+        {
+            float e = ol[i] - orr[i] / 0.8f;
+            d += e * e;
+            sg += ol[i] * ol[i];
+        }
+        float unevenDb = 10.f * log10f((float)(d / sg) + 1e-20f);
+        run(0.f, 0, 0.f, l, r, o0l, o0r);
+        run(0.7f, HPF_FM_SELF, 0.f, l, r, ol, orr);
+        d = sg = 0;
+        for(size_t i = 4800; i < ol.size(); i++)
+        {
+            d += (ol[i] - o0l[i]) * (ol[i] - o0l[i]);
+            sg += o0l[i] * o0l[i];
+        }
+        float effDb = 10.f * log10f((float)(d / sg) + 1e-20f);
+        bool  ok    = monoDb < -60.f && unevenDb > -30.f && effDb > -15.f;
+        printf("mono in: L-R %.1f dB (stays centred) | 2 dB uneven in: L vs R shape %.1f dB (pushed apart) | "
+               "FM 70%% vs off: %.1f dB %s\n", monoDb, unevenDb, effDb, ok ? "ok" : "FAIL");
+        fails += !ok;
     }
 
     printf("\n%s (%d failures)\n", fails ? "FAILED" : "all tests pass", fails);

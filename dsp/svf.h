@@ -63,7 +63,7 @@ struct ResFilter
 struct Ms20Hpf
 {
     SvfCore  pre;
-    float    ic1 = 0.f, ic2 = 0.f, bp = 0.f, g = 0.1f;
+    float    ic1 = 0.f, ic2 = 0.f, bp = 0.f, w = 0.01f;
     uint32_t rng = 0x2545F491u;
 
     // Clipper in the feedback: tanh with a little offset (even harmonics), unity slope at 0
@@ -79,10 +79,22 @@ struct Ms20Hpf
         return (fastTanh(u + kAsym) - t0) * d0 / u;
     }
 
-    // R: resonance feedback 0..2.6 (self-oscillates past 2). drvIn: input gain. sat: 0..1 output clip blend.
-    inline float Process(float x, float gTarget, float R, float drvIn, float sat, bool slope24)
+    // tan(x) for 0 < x < 1.45 (Pade, within ~3% at the very top, exact enough lower down): cheap enough
+    // to run per sample under audio-rate FM
+    static inline float TanW(float x)
     {
-        g += (gTarget - g) * 0.004f; // ~5 ms cutoff glide
+        x = clampf(x, 0.0006f, 1.44f);
+        float x2 = x * x;
+        return x * (15.f - x2) / (15.f - 6.f * x2);
+    }
+
+    // wTarget: cutoff as an angle (CutoffToW). R: resonance feedback 0..2.6 (self-oscillates past 2).
+    // drvIn: input gain. sat: 0..1 output clip blend. fmMul: per-sample cutoff multiplier (audio-rate FM
+    // and stereo spread); the glide is on the knob only, so the FM isn't smoothed away.
+    inline float Process(float x, float wTarget, float R, float drvIn, float sat, bool slope24, float fmMul = 1.f)
+    {
+        w += (wTarget - w) * 0.004f; // ~5 ms cutoff glide
+        const float g = TanW(w * fmMul);
         float u = x * drvIn;
         if(R > 1.9f) // a whisper of noise so it can start howling from silence
         {
@@ -120,6 +132,9 @@ struct Ms20Hpf
 
 // Resonance knob (0..1) to MS-20 feedback: self-oscillation starts at about 80%
 inline float Ms20Feedback(float res) { return 2.6f * powf(clampf(res, 0.f, 1.f), 1.2f); }
+
+// Cutoff in Hz to the angle the MS-20 HPF glides and modulates
+inline float CutoffToW(float hz) { return kPi * clampf(hz, 5.f, 0.46f * kSampleRate) / kSampleRate; }
 
 // Cutoff in Hz to the prewarped SVF gain
 inline float CutoffToG(float hz)

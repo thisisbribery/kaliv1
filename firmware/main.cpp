@@ -49,6 +49,8 @@ struct Settings
     int envRel = 2, envRange = 1, trigSens = 1, lfoRate = 40;
     int frzDo = 0, frzMode = 0, syncDo = 1, syncMode = 1; // FREEZE = SMASH while held, SYNC = BYPASS latched
     int presetSlot = 0;
+    // added in phase 4 test3 (new settings go at the end, so older saves load with these at default)
+    int hpfFm = 0, hpfFmSrc = ks::HPF_FM_SELF, hpfSpread = 0;
 };
 Settings S;
 
@@ -108,6 +110,8 @@ static void FmtColor(char* s, int n, int v);
 #define PF(n, var, lo, hi, d, fmt) {n, &S.var, lo, hi, d, nullptr, "", fmt}
 #define PA(n, var) {n, &A.var, 0, 3, 0, kUpdNames, "", nullptr}
 ParamDef pHpf[] = {P("RES", hpfRes, 0, 100, 0, nullptr, "%"), P("DRIVE", hpfDrive, 0, 100, 0, nullptr, "%"),
+                   P("AUDIO FM", hpfFm, 0, 100, 0, nullptr, "%"), P("FM SRC", hpfFmSrc, 0, ks::HPF_FM_NUM - 1, 0, ks::kHpfFmNames, ""),
+                   P("SPREAD", hpfSpread, -100, 100, 0, nullptr, ""),
                    P("SLOPE", hpfSlope, 0, 1, 0, kSlopeNames, ""),
                    P("FILTERS", filters, 0, 1, 0, kFilterNames, ""), P("CV BASE", hpfBase, 0, 100, 0, nullptr, "%")};
 ParamDef pDrv[2][8] = {
@@ -205,7 +209,7 @@ struct BlockDef
     int         count;
 };
 const BlockDef kBlocks[B_COUNT] = {{"HOME", nullptr, 0},
-                                   {"HPF", pHpf, 5},
+                                   {"HPF", pHpf, 8},
                                    {"DRIVE A", pDrv[0], 8},
                                    {"DRIVE B", pDrv[1], 8},
                                    {"LPF", pLpf, 3},
@@ -307,6 +311,9 @@ static void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer
     p.hpfCut     = knob[0];
     p.hpfRes     = S.hpfRes * 0.01f;
     p.hpfDrive   = S.hpfDrive * 0.01f;
+    p.hpfFm      = S.hpfFm * 0.01f;
+    p.hpfFmSrc   = S.hpfFmSrc;
+    p.hpfSpread  = S.hpfSpread * 0.01f;
     p.hpf24      = S.hpfSlope;
     p.filtersAll = S.filters == 0;
     p.lpfCut     = knob[5];
@@ -450,6 +457,32 @@ static void LoadBank()
         memcpy(&bank, q, sizeof(Bank));
         S = bank.cur;
         ClampAll();
+    }
+    else if(q->magic == kMagic && q->size >= 64 && q->size < sizeof(Settings) && (q->size & 3) == 0)
+    {
+        // saved by an older build: new settings were appended, so copy what's there over defaults
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(q) + 3 * sizeof(uint32_t);
+        bank       = Bank();
+        bank.magic = kMagic;
+        bank.size  = sizeof(Settings);
+        bank.used  = q->used;
+        for(int i = 0; i < 9; i++)
+        {
+            Settings& dst = i == 0 ? bank.cur : bank.slot[i - 1];
+            dst           = Settings();
+            memcpy(&dst, base + i * q->size, q->size);
+        }
+        S = bank.cur;
+        ClampAll();
+        bank.cur = S;
+        for(int i = 0; i < 8; i++)
+        {
+            Settings keep = S;
+            S             = bank.slot[i];
+            ClampAll();
+            bank.slot[i] = S;
+            S            = keep;
+        }
     }
     else
     {
