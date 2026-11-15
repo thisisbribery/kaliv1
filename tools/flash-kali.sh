@@ -31,18 +31,20 @@ if [ -z "$APP" ] || [ ! -f "$APP" ]; then
 fi
 command -v dfu-util >/dev/null || { echo "dfu-util not found: brew install dfu-util" >&2; exit 1; }
 
-# flash <address> <file>: dfu-util often reports an error on the final "leave" even when the write
+# try_flash <address> <file>: dfu-util often reports an error on the final "leave" even when the write
 # succeeded, so success is judged by its "Download done" line
-flash() {
+try_flash() {
     local out
     out=$(dfu-util -a 0 -s "$1:leave" -D "$2" -d ,0483:df11 2>&1) || true
     if echo "$out" | grep -q -E "Download done|File downloaded successfully"; then
         echo "     Written."
-    else
-        echo "$out" | tail -5 >&2
-        echo "Write failed." >&2
-        exit 1
+        return 0
     fi
+    echo "$out" | tr '\r' '\n' | grep -i "error" | tail -2 >&2
+    return 1
+}
+flash() {
+    try_flash "$1" "$2" || { echo "Write failed." >&2; exit 1; }
 }
 
 # wait_for <pattern> <seconds>: poll the DFU device list until the pattern shows up
@@ -83,6 +85,21 @@ else
     fi
 fi
 
-echo "     Found it. Installing $(basename "$APP")..."
-flash 0x90040000 "$APP"
+# The bootloader only waits about 2 s after RESET unless something keeps it busy; a dropped write leaves
+# it intact, so a failed write just means: RESET again, and this tries again (3 tries).
+for try in 1 2 3; do
+    echo "     Found it. Installing $(basename "$APP")..."
+    if try_flash 0x90040000 "$APP"; then
+        break
+    fi
+    if [ "$try" = 3 ]; then
+        echo "Write failed 3 times. The bootloader is fine: check the cable (no hub) and run this again." >&2
+        exit 1
+    fi
+    echo "     That write dropped out. Press RESET on the Kali again..."
+    if ! wait_for "0x90040000" 120; then
+        echo "No Daisy bootloader after 2 minutes. Run this again and press RESET." >&2
+        exit 1
+    fi
+done
 echo "Done. KALI SMASH starts by itself (press RESET if the screen stays on UPDATE MODE)."
