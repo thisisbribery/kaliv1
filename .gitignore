@@ -1,0 +1,4 @@
+build/
+harness/render
+*.wav
+.DS_Store
