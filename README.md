@@ -17,6 +17,10 @@ IN L/R
 
 Plus: six CV outs that follow the music (envelopes, transients, LFOs, chaos), two clock outs that work as LED level meters or gates, SMASH and BYPASS on the two buttons, autosave, and 8 preset slots.
 
+**Web page:** [thisisbribery.com/kali](https://www.thisisbribery.com/kali/), with a ready-to-flash download.
+
+**Support:** find it useful? [Buy me a coffee on Ko-fi](https://ko-fi.com/thisisbribery).
+
 **Status:** phase 4 test4. Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
 
 ## Contents
