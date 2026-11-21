@@ -63,7 +63,7 @@ struct ResFilter
 struct Ms20Hpf
 {
     SvfCore  pre;
-    float    ic1 = 0.f, ic2 = 0.f, bp = 0.f, w = 0.01f;
+    float    ic1 = 0.f, ic2 = 0.f, bp = 0.f, w = 0.01f, rS = 0.f, drvS = 1.f;
     uint32_t rng = 0x2545F491u;
 
     // Clipper in the feedback: tanh with a little offset (even harmonics), unity slope at 0
@@ -94,8 +94,11 @@ struct Ms20Hpf
     inline float Process(float x, float wTarget, float R, float drvIn, float sat, bool slope24, float fmMul = 1.f)
     {
         w += (wTarget - w) * 0.004f; // ~5 ms cutoff glide
+        rS += (R - rS) * 0.002f;      // ~10 ms resonance glide: a step in the damping under signal clicks
+        drvS += (drvIn - drvS) * 0.002f;
+        R = rS;
         const float g = TanW(w * fmMul);
-        float u = x * drvIn;
+        float u = x * drvS;
         if(R > 1.9f) // a whisper of noise so it can start howling from silence
         {
             rng ^= rng << 13;

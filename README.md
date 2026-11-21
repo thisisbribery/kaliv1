@@ -21,7 +21,7 @@ Plus: six CV outs that follow the music (envelopes, transients, LFOs, chaos), tw
 
 **Support:** find it useful? [Buy me a coffee on Ko-fi](https://ko-fi.com/thisisbribery).
 
-**Status:** phase 4 test5 (adds MOTION SHIFT, the three-band frequency shifter). Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
+**Status:** phase 4 test6 (MOTION SHIFT, the three-band frequency shifter, and a click-free HPF). Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
 
 ## Contents
 
@@ -59,7 +59,7 @@ Needs macOS with `dfu-util` (`brew install dfu-util`) and a USB **data** cable. 
 **First install** (from stock Kali or anything older):
 
 ```bash
-tools/flash-kali.sh --first release/KaliSmash-phase4-test5.bin
+tools/flash-kali.sh --first release/KaliSmash-phase4-test6.bin
 ```
 
 When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It installs the bootloader, catches it as it starts and installs KALI SMASH.
@@ -67,7 +67,7 @@ When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It insta
 **Updates:**
 
 ```bash
-tools/flash-kali.sh release/KaliSmash-phase4-test5.bin
+tools/flash-kali.sh release/KaliSmash-phase4-test6.bin
 ```
 
 While it waits, press **RESET** on the Daisy board (no BOOT). SYSTEM → UPDATE → GO on the module is the button-free route.
@@ -127,7 +127,7 @@ An MS-20 style high-pass. The resonance feeds back through an asymmetric diode-s
 
 | Setting | Range | What it does |
 |---|---|---|
-| RES | 0-100% | Resonance. Self-oscillates from about 80% (pitch follows the cutoff); full RES howls at about 0.9 of full scale |
+| RES | 0-100% | Resonance. Self-oscillates from about 80% (pitch follows the cutoff); full RES howls at about 0.9 of full scale. It fades in over the bottom 3% of the knob and glides, so the HPF comes in and out without a click |
 | DRIVE | 0-100% | 0 to +24 dB into the filter; the output soft-clips as it rises |
 | AUDIO FM | 0-100% | the input audio into the cutoff, at audio rate: up to ±6 octaves per full-scale swing (capped at ±5). Gritty sidebands, and the cutoff jumps with every hit. The output soft-clip comes in with it |
 | FM SRC | SELF / CROSS / MONO | SELF: L audio moves the L cutoff, R moves R, so any imbalance in the mix pushes the two filters apart and the stereo field wobbles. CROSS: L moves R and R moves L, wilder. MONO: the sum moves both, stays centred |

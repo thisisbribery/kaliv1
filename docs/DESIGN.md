@@ -511,3 +511,7 @@ MOTION type 6, SHIFT: a three-band frequency shifter, after the Self-Care lever 
 - CHAOS morphs set A {+90, -300, -1500 Hz} to set B {-190, +900, +2500 Hz}. RATE is the glide time (30 ms to 2.4 s, shown in ms/s). SPREAD turns the R oscillators 0-180°. FEEDBACK goes through 30 ms, comes in with the knob (not pushed to max), with (1 - fb²)^0.75 level compensation.
 - Harness test 9: sine in each band, shift within 2 dB of input level, mirror image 49-64 dB down. On the Mac SHIFT costs less than FLANGER or CHAOS.
 - Added as the last type, so saved settings and presets load unchanged.
+
+## Phase 4 test6 (2026-11-21)
+
+HPF click fix. With RES above 0, crossing the 1% "off" point at the bottom of the HPF knob snapped the resonance between 0 and full, which clicked (10-37 dB bursts above 4 kHz in the harness, worst on release with DRIVE). Now the resonance fades in over the bottom 3% of the knob, and Ms20Hpf glides R and the input drive per sample (~10 ms), which also smooths RES turns and the KILL LOWS jump. Harness test 10 steps the HPF on and off at several RES/DRIVE settings and compares the >4 kHz burst at each step with both settled states: within 0.3 dB now. Confirmed click-free on hardware.

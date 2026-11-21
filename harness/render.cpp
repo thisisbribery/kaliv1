@@ -783,6 +783,56 @@ static int Test()
         }
     }
 
+    // 10. HPF clicks: low sines in, the HPF knob stepped off -> 2% -> off (and to 250 Hz, as KILL LOWS does)
+    //     with RES and DRIVE up. The >4 kHz content around each step must stay within 3 dB of the steady
+    //     state (resonance used to snap on and off at 1% of the knob: 30-50 dB bursts).
+    printf("\nHPF on/off clicks (>4 kHz burst at the step vs steady)\n");
+    {
+        static Chain ck;
+        for(float res : {0.f, 0.5f, 0.9f})
+            for(float drv : {0.f, 0.6f})
+                for(float to : {0.02f, 0.38f})
+                {
+                    ChainParams a, b;
+                    a.mix = b.mix = 1.f;
+                    a.hpfRes = b.hpfRes = res;
+                    a.hpfDrive = b.hpfDrive = drv;
+                    a.hpfCut = 0.f;
+                    b.hpfCut = to;
+                    ck       = Chain();
+                    ck.Init();
+                    ChainMeters        m;
+                    const int          N = 96000, on = 48000, off = 72000;
+                    std::vector<float> in(N), cl(N), cr(N);
+                    for(int i = 0; i < N; i++)
+                        in[i] = 0.35f * sinf(2.f * kPi * 55.f * i / 48000.f) +
+                                0.25f * sinf(2.f * kPi * 110.f * i / 48000.f + 1.f) +
+                                0.15f * sinf(2.f * kPi * 330.f * i / 48000.f);
+                    for(int i = 0; i < N; i += 48)
+                        ck.Process(i >= on && i < off ? b : a, &in[i], &in[i], &cl[i], &cr[i], 48, m);
+                    float       s1 = 0.f, s2 = 0.f, steady = 0.f, burst = 0.f;
+                    const float g = tanf(kPi * 4000.f / 48000.f), k = 1.4142136f;
+                    const float a1 = 1.f / (1.f + g * (g + k)), a2 = g * a1, a3 = g * a2;
+                    for(int i = 0; i < N; i++)
+                    {
+                        float v3 = cl[i] - s2, v1 = a1 * s1 + a2 * v3, v2 = s2 + a2 * s1 + a3 * v3;
+                        s1       = 2.f * v1 - s1;
+                        s2       = 2.f * v2 - s2;
+                        float e  = fabsf(cl[i] - k * v1 - v2);
+                        // steady: both settled states (a self-oscillating HPF has its own harmonics up there)
+                        if((i > 24000 && i < on - 2400) || (i > on + 9600 && i < off - 480))
+                            steady = fmaxf(steady, e);
+                        if((i >= on - 480 && i < on + 4800) || (i >= off - 480 && i < off + 4800))
+                            burst = fmaxf(burst, e);
+                    }
+                    float d  = 20.f * log10f((burst + 1e-9f) / (steady + 1e-9f));
+                    bool  ok = d < 3.f;
+                    printf("off -> %s, RES %2.0f%% DRIVE %2.0f%%: %+5.1f dB %s\n", to < 0.1f ? "2%    " : "250 Hz",
+                           res * 100.f, drv * 100.f, d, ok ? "ok" : "FAIL");
+                    fails += !ok;
+                }
+    }
+
     printf("\n%s (%d failures)\n", fails ? "FAILED" : "all tests pass", fails);
     return fails ? 1 : 0;
 }

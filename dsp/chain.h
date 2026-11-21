@@ -115,7 +115,9 @@ class Chain
         const float fmOct  = 6.f * p.hpfFm * p.hpfFm; // octaves per unit of audio
         const float sprOct = 2.f * clampf(p.hpfSpread, -1.f, 1.f);
         const float sprFm  = 4.f * p.hpfSprFm * p.hpfSprFm; // octaves per unit of audio, each way
-        const float hpfR   = hpfOff ? 0.f : Ms20Feedback(p.hpfRes);
+        // resonance fades in over the bottom 3% of the knob (it used to snap on at 1% and click); the filter
+        // also glides it per sample, so RES turns and button jumps don't step either
+        const float hpfR   = Ms20Feedback(p.hpfRes) * clampf(p.hpfCut / 0.03f, 0.f, 1.f);
         const float hpfDrv = dbToGain(24.f * clampf(p.hpfDrive, 0.f, 1.f));
         // the output soft clip comes in with DRIVE, and with audio FM (swept resonance throws big peaks)
         const float hpfSat = clampf(fmaxf(p.hpfDrive, fmaxf(p.hpfFm, p.hpfSprFm)) * 4.f, 0.f, 1.f);
