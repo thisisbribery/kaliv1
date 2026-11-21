@@ -49,6 +49,7 @@ Plus: six CV outs that follow the music (envelopes, transients, LFOs, chaos), tw
 - [Repo layout](#repo-layout)
 - [Design notes](#design-notes)
 - [Credits and licences](#credits-and-licences)
+  - [Licence](#licence)
 
 ## Installing
 
@@ -368,7 +369,7 @@ The tests cover the oversampler null (wet and dry line up to the sample), drive 
 | `harness/` | offline renderer and tests |
 | `hwtest/` | hardware bring-up firmware |
 | `tools/` | `flash-kali.sh`, `halfband.py` (generates the oversampling filters), `boot_emu.py` (Unicorn emulator used to boot-check builds and count CPU) |
-| `release/` | the current firmware, the Daisy bootloader and its licence |
+| `release/` | the current firmware, the Daisy bootloader and its licence, and the libDaisy, ST and Arm licences for the firmware image (`LICENSE-libDaisy.txt`) |
 | `docs/` | `DESIGN.md` (full design and build history), `PINMAP.md` (confirmed hardware map) |
 
 ## Design notes
@@ -382,4 +383,18 @@ The tests cover the oversampler null (wet and dry line up to the sample), drive 
 
 ## Credits and licences
 
-KALI SMASH's DSP and firmware are original code. Ideas and our own earlier code come from the Bribes Deluge firmware (the drive curves, the v1.27 crushers). The G.711 mu-law segment idea follows Mutable Instruments Clouds/Beads (MIT). The platform is Electrosmith's libDaisy (MIT). `release/dsy_bootloader_v6_4-intdfu-2000ms.bin` is Electrosmith's Daisy bootloader, MIT licensed (`release/LICENSE-DaisyBootloader.txt`). Stock Kali firmware was only examined to confirm the hardware pin map; none of its code is used.
+KALI SMASH's DSP and firmware are original code. Ideas and our own earlier code come from the Bribes Deluge firmware (the drive curves, the v1.27 crushers). The G.711 mu-law segment idea follows Mutable Instruments Clouds/Beads (MIT). The platform is Electrosmith's libDaisy (MIT), which brings in STMicroelectronics' HAL and USB library and Arm's CMSIS; their licences are in `release/LICENSE-libDaisy.txt` and go with every copy of the firmware. `release/dsy_bootloader_v6_4-intdfu-2000ms.bin` is Electrosmith's Daisy bootloader, MIT licensed (`release/LICENSE-DaisyBootloader.txt`). Stock Kali firmware was only examined to confirm the hardware pin map; none of its code is used.
+
+### Licence
+
+Required Notice: Copyright 2026 Bribery (https://thisisbribery.com)
+
+KALI SMASH is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md), plus two additional permissions. Full terms are in [LICENSE.md](LICENSE.md).
+
+- **Free for noncommercial use.** Use it, study it, change it and share it.
+- **Forks are welcome** on the same noncommercial terms. Keep the `Required Notice:` line, include or link the licence, and credit Bribery's KALI SMASH.
+- **Make and sell music with it**, including paid gigs, sessions and releases.
+- **Don't sell it.** No selling the firmware, the code, changed versions, pre-flashed modules or paid packs that include it without written permission.
+- **dsp.coffee**, the maker of the Kali, may use it commercially, for example as official Kali firmware.
+
+The licence covers Bribery's own work only. libDaisy, the ST and Arm parts and the Daisy bootloader stay under their own licences. For any other commercial use, contact Bribery through [thisisbribery.com](https://thisisbribery.com).
