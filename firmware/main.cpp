@@ -94,6 +94,15 @@ struct ParamDef
 
 static void FmtRate(char* s, int n, int v)
 {
+    if(S.motType == ks::MOTION_SHIFT) // SHIFT: RATE is the glide time
+    {
+        int ms = (int)lrintf(ks::MotionGlideSec(v * 0.01f) * 1000.f);
+        if(ms < 1000)
+            snprintf(s, n, "%dms", ms);
+        else
+            snprintf(s, n, "%d.%02ds", ms / 1000, (ms / 10) % 100);
+        return;
+    }
     int c = (int)lrintf(ks::MotionRateHz(v * 0.01f) * 100.f);
     if(c < 1000)
         snprintf(s, n, "%d.%02dHz", c / 100, c % 100);

@@ -15,10 +15,11 @@ enum MotionType
     MOTION_ENSEMBLE, // string-machine ensemble: 3 taps, slow + fast LFOs 120 degrees apart
     MOTION_PHASER,   // 6-stage stereo phaser
     MOTION_WARP,     // tape: wow, flutter, drift and dropouts
+    MOTION_SHIFT,    // three-band frequency shifter, each band spun by its own offset
     MOTION_NUM_TYPES
 };
-static const char* const kMotionTypeNames[MOTION_NUM_TYPES] = {"FLANGER", "CHAOS", "ENSEMBLE", "PHASER", "WARP"};
-static const char* const kMotionShort[MOTION_NUM_TYPES]     = {"FLANG", "CHAOS", "ENSMB", "PHASE", "WARP"};
+static const char* const kMotionTypeNames[MOTION_NUM_TYPES] = {"FLANGER", "CHAOS", "ENSEMBLE", "PHASER", "WARP", "SHIFT"};
+static const char* const kMotionShort[MOTION_NUM_TYPES]     = {"FLANG", "CHAOS", "ENSMB", "PHASE", "WARP", "SHIFT"};
 
 struct MotionParams
 {
@@ -31,6 +32,12 @@ struct MotionParams
 };
 
 inline float MotionRateHz(float r) { return 0.02f * powf(1000.f, clampf(r, 0.f, 1.f)); }
+// SHIFT uses RATE as the glide time instead: 0..1 = 30 ms .. 2.4 s
+inline float MotionGlideSec(float r) { return 0.03f * powf(80.f, clampf(r, 0.f, 1.f)); }
+
+// SHIFT offsets in Hz for the low / mid / high bands. CHAOS morphs from set A to set B.
+static const float kShiftA[3] = {90.f, -300.f, -1500.f};
+static const float kShiftB[3] = {-190.f, 900.f, 2500.f};
 
 // 4-point Hermite read, d samples behind the write position (d >= 1)
 template <int kLen>
@@ -60,6 +67,9 @@ class Motion
         buf_[1] = mem + kLen;
         for(int i = 0; i < 2 * kLen; i++)
             mem[i] = 0.f;
+        xoLoC_.Set(250.f);
+        xoHiC_.Set(2500.f);
+        ResetShift();
     }
 
     void Configure(const MotionParams& p)
@@ -73,6 +83,7 @@ class Motion
                 for(int k = 0; k < 6; k++)
                     ap_[c][k] = 0.f;
             }
+            ResetShift();
         }
         const float a = clampf(p.amount, 0.f, 1.f);
         wetTarget_    = a < 0.01f ? 0.f : clampf((a - 0.01f) * 2.04f, 0.f, 1.f);
@@ -85,6 +96,19 @@ class Motion
         inc_          = rateHz_ / kSampleRate;
         spread_       = 0.5f * clampf(p.spread, 0.f, 1.f); // in cycles
         chaos_        = clampf(p.chaos, 0.f, 1.f);
+        if(type_ == MOTION_SHIFT)
+        {
+            // the knob is the lever: shift 0..full offsets over the whole travel, wet in over the first quarter,
+            // FEEDBACK comes in with the knob but is never pushed past the page setting
+            wetTarget_ = a < 0.01f ? 0.f : clampf((a - 0.01f) * 4.f, 0.f, 1.f);
+            fbTarget_  = clampf(p.feedback, -1.f, 1.f) * 0.9f * clampf(a * 2.f, 0.f, 1.f);
+            for(int b = 0; b < 3; b++)
+                shiftTgt_[b] = a * (kShiftA[b] + (kShiftB[b] - kShiftA[b]) * chaos_);
+            glideCoef_ = 1.f - expf(-1.f / (MotionGlideSec(p.rate) * kSampleRate));
+            float ph   = 2.f * kPi * spread_; // R oscillator phase offset, 0..180 degrees
+            rotC_      = cosf(ph);
+            rotS_      = sinf(ph);
+        }
     }
 
     bool Active() const { return wetTarget_ > 0.f || wet_ > 1e-4f; }
@@ -102,6 +126,7 @@ class Motion
             case MOTION_CHAOS: Chaos(l, r, n); break;
             case MOTION_ENSEMBLE: Ensemble(l, r, n); break;
             case MOTION_PHASER: Phaser(l, r, n); break;
+            case MOTION_SHIFT: Shift(l, r, n); break;
             default: Warp(l, r, n); break;
         }
     }
@@ -327,6 +352,162 @@ class Motion
         }
     }
 
+
+    // ---- SHIFT ----
+    // Per side: DC blocker -> Hilbert allpass pair (the analytic signal, re + j im) -> two crossovers applied
+    // to re and im alike (250 Hz, 2.5 kHz; low = LP, high = HP of the rest, mid = what's left, so the bands sum
+    // back exactly) -> each band multiplied by its own complex oscillator -> real part. A positive offset moves
+    // every frequency in the band up by that many Hz, so harmonics stop lining up; a negative one moves them down
+    // and past 0 Hz they fold back. FEEDBACK runs the output back in through 30 ms, so each pass shifts again.
+    // After the "Self-Care" lever in Freakshow MISHBY (studied, not copied).
+    struct Hilbert
+    {
+        // Olli Niemitalo's 4+4 allpass 90-degree pair, coefficients squared. Path A carries a 1-sample delay.
+        float ax1[4] = {}, ax2[4] = {}, ay1[4] = {}, ay2[4] = {};
+        float bx1[4] = {}, bx2[4] = {}, by1[4] = {}, by2[4] = {};
+        float aDel = 0.f;
+        inline void Process(float x, float& re, float& im)
+        {
+            static const float ca[4] = {0.4794009f, 0.8762185f, 0.9765976f, 0.9974993f};
+            static const float cb[4] = {0.1617585f, 0.7330289f, 0.9453497f, 0.9905992f};
+            float a = x, b = x;
+            for(int k = 0; k < 4; k++)
+            {
+                float ya = ca[k] * (a + ay2[k]) - ax2[k];
+                ax2[k]   = ax1[k];
+                ax1[k]   = a;
+                ay2[k]   = ay1[k];
+                ay1[k]   = ya;
+                a        = ya;
+                float yb = cb[k] * (b + by2[k]) - bx2[k];
+                bx2[k]   = bx1[k];
+                bx1[k]   = b;
+                by2[k]   = by1[k];
+                by1[k]   = yb;
+                b        = yb;
+            }
+            re   = aDel;
+            aDel = a;
+            im   = b;
+        }
+    };
+    // 2-pole TPT state variable filter (Butterworth), lowpass and highpass outputs
+    struct Svf2
+    {
+        float ic1 = 0.f, ic2 = 0.f;
+        inline void Process(float x, float a1, float a2, float a3, float& lp, float& hp)
+        {
+            float v3 = x - ic2;
+            float v1 = a1 * ic1 + a2 * v3;
+            float v2 = ic2 + a2 * ic1 + a3 * v3;
+            ic1      = 2.f * v1 - ic1;
+            ic2      = 2.f * v2 - ic2;
+            lp       = v2;
+            hp       = x - 1.4142136f * v1 - v2;
+        }
+    };
+    struct SvfCoefs
+    {
+        float a1, a2, a3;
+        void Set(float hz)
+        {
+            float g = tanf(kPi * hz / kSampleRate);
+            a1      = 1.f / (1.f + g * (g + 1.4142136f));
+            a2      = g * a1;
+            a3      = g * a2;
+        }
+    };
+
+    void ResetShift()
+    {
+        for(int c = 0; c < 2; c++)
+        {
+            hil_[c]  = Hilbert();
+            dcX_[c]  = 0.f;
+            dcY_[c]  = 0.f;
+            for(int k = 0; k < 2; k++)
+            {
+                xoLo_[c][k] = Svf2();
+                xoHi_[c][k] = Svf2();
+            }
+        }
+        for(int b = 0; b < 3; b++)
+        {
+            oscC_[b]     = 1.f;
+            oscS_[b]     = 0.f;
+            shiftCur_[b] = 0.f;
+        }
+    }
+
+    void Shift(float* l, float* r, int n)
+    {
+        const SvfCoefs& lo = xoLoC_;
+        const SvfCoefs& hi = xoHiC_;
+        const int   fbLen = (int)(0.03f * kSampleRate);
+        const float wInc  = 2.f * kPi / kSampleRate;
+        for(int i = 0; i < n; i++)
+        {
+            Smooth();
+            // glide each band towards its offset, then step its oscillator (sin/cos of the step by series,
+            // renormalised every sample so it never drifts)
+            for(int b = 0; b < 3; b++)
+            {
+                shiftCur_[b] += (shiftTgt_[b] - shiftCur_[b]) * glideCoef_;
+                float d  = shiftCur_[b] * wInc, d2 = d * d;
+                float cd = 1.f - d2 * (0.5f - d2 * 0.0416667f);
+                float sd = d * (1.f - d2 * (0.1666667f - d2 * 0.0083333f));
+                float c  = oscC_[b] * cd - oscS_[b] * sd;
+                float s  = oscC_[b] * sd + oscS_[b] * cd;
+                float g  = 1.5f - 0.5f * (c * c + s * s);
+                oscC_[b] = c * g;
+                oscS_[b] = s * g;
+            }
+            lfoOut_    = clampf(shiftCur_[1] * (1.f / 900.f), -1.f, 1.f);
+            // shifted copies don't cancel like a comb does, so feedback piles up power: take it back out
+            const float fbQ    = sqrtf(1.f - fb_ * fb_);
+            const float fbComp = fbQ * sqrtf(fbQ); // (1 - fb^2)^0.75
+            // dry and shifted are unrelated, so a straight crossfade dips 3 dB halfway: hold the power instead
+            const float blendG = 1.f / sqrtf(1.f - 2.f * wet_ + 2.f * wet_ * wet_);
+            float x[2] = {l[i], r[i]};
+            const int rd = (w_ - fbLen) & (kLen - 1);
+            for(int c = 0; c < 2; c++)
+            {
+                // DC blocker (~10 Hz): DC would otherwise come out as a steady tone at the low band's offset
+                float xd = x[c] - dcX_[c] + 0.9987f * dcY_[c];
+                dcX_[c]  = x[c];
+                dcY_[c]  = xd;
+                float u  = xd + fb_ * fastTanh(buf_[c][rd]);
+                float re, im;
+                hil_[c].Process(u, re, im);
+                float lr, li, rr, ri, hr, hi2, dummy;
+                xoLo_[c][0].Process(re, lo.a1, lo.a2, lo.a3, lr, dummy);
+                xoLo_[c][1].Process(im, lo.a1, lo.a2, lo.a3, li, dummy);
+                rr = re - lr;
+                ri = im - li;
+                xoHi_[c][0].Process(rr, hi.a1, hi.a2, hi.a3, dummy, hr);
+                xoHi_[c][1].Process(ri, hi.a1, hi.a2, hi.a3, dummy, hi2);
+                float br[3] = {lr, rr - hr, hr}, bi[3] = {li, ri - hi2, hi2};
+                float y     = 0.f;
+                for(int b = 0; b < 3; b++)
+                {
+                    float oc = oscC_[b], os = oscS_[b];
+                    if(c) // R: the same oscillator turned by SPREAD
+                    {
+                        float t = oc * rotC_ - os * rotS_;
+                        os      = oc * rotS_ + os * rotC_;
+                        oc      = t;
+                    }
+                    y += br[b] * oc + bi[b] * os;
+                }
+                buf_[c][w_] = y;
+                y *= fbComp;
+                float o     = (x[c] + wet_ * (y - x[c])) * blendG;
+                c ? r[i] = o : l[i] = o;
+            }
+            w_ = (w_ + 1) & (kLen - 1);
+        }
+    }
+
     int      type_ = -1;
     float*   buf_[2] = {nullptr, nullptr};
     int      w_      = 0;
@@ -339,6 +520,14 @@ class Motion
     int      driftCount_ = 0;
     int      dropLeft_ = 0;
     uint32_t rng_      = 0x1234567u;
+    // SHIFT
+    Hilbert  hil_[2];
+    Svf2     xoLo_[2][2], xoHi_[2][2];
+    SvfCoefs xoLoC_ = {}, xoHiC_ = {};
+    float    dcX_[2] = {0.f, 0.f}, dcY_[2] = {0.f, 0.f};
+    float    oscC_[3] = {1.f, 1.f, 1.f}, oscS_[3] = {0.f, 0.f, 0.f};
+    float    shiftCur_[3] = {0.f, 0.f, 0.f}, shiftTgt_[3] = {0.f, 0.f, 0.f};
+    float    glideCoef_ = 0.001f, rotC_ = 1.f, rotS_ = 0.f;
 };
 
 } // namespace ks

@@ -738,6 +738,51 @@ static int Test()
         fails += !ok;
     }
 
+    // 9. MOTION SHIFT: a sine in each band comes out moved by that band's offset, the mirror image
+    //    (moved the wrong way) at least 40 dB down, for both CHAOS ends; level kept within 2 dB.
+    printf("\nMOTION SHIFT: sine in, shifted out (wanted vs mirror image)\n");
+    {
+        static float mem[2 * Motion::kLen];
+        auto goertzel = [](const std::vector<float>& x, size_t from, float hz) {
+            double w = 2.0 * M_PI * hz / 48000.0, c = 2.0 * cos(w), s1 = 0, s2 = 0;
+            for(size_t i = from; i < x.size(); i++)
+            {
+                // Hann window to keep the leakage of the other bands' tones out
+                double h  = 0.5 - 0.5 * cos(2.0 * M_PI * (double)(i - from) / (double)(x.size() - from));
+                double s0 = x[i] * h + c * s1 - s2;
+                s2        = s1;
+                s1        = s0;
+            }
+            return (float)sqrt(s1 * s1 + s2 * s2 - c * s1 * s2);
+        };
+        struct Case { float in; float chaos; float shift; };
+        const Case cases[] = {{100.f, 0.f, 90.f}, {1000.f, 0.f, -300.f}, {6000.f, 0.f, -1500.f},
+                              {100.f, 1.f, -190.f}, {1000.f, 1.f, 900.f}, {6000.f, 1.f, 2500.f}};
+        for(const Case& k : cases)
+        {
+            Motion m;
+            m.Init(mem);
+            MotionParams mp;
+            mp.type = MOTION_SHIFT; mp.amount = 1.f; mp.chaos = k.chaos; mp.rate = 0.f; mp.spread = 0.f;
+            m.Configure(mp);
+            const int          n = 48000 * 2;
+            std::vector<float> a(n), b(n);
+            for(int i = 0; i < n; i++)
+                a[i] = b[i] = 0.5f * sinf(2.f * kPi * k.in * i / 48000.f);
+            std::vector<float> in = a;
+            for(int i = 0; i < n; i += 48)
+                m.ProcessBlock(&a[i], &b[i], 48);
+            float want  = goertzel(a, 48000, fabsf(k.in + k.shift));
+            float image = goertzel(a, 48000, fabsf(k.in - k.shift));
+            float ref   = goertzel(in, 48000, k.in);
+            float imgDb = 20.f * log10f(image / want + 1e-12f), lvlDb = 20.f * log10f(want / ref + 1e-12f);
+            bool  ok    = imgDb < -40.f && fabsf(lvlDb) < 2.f;
+            printf("%5.0f Hz, CHAOS %3.0f%%: -> %5.0f Hz at %+5.1f dB, image %6.1f dB %s\n", k.in, k.chaos * 100.f,
+                   fabsf(k.in + k.shift), lvlDb, imgDb, ok ? "ok" : "FAIL");
+            fails += !ok;
+        }
+    }
+
     printf("\n%s (%d failures)\n", fails ? "FAILED" : "all tests pass", fails);
     return fails ? 1 : 0;
 }

@@ -21,7 +21,7 @@ Plus: six CV outs that follow the music (envelopes, transients, LFOs, chaos), tw
 
 **Support:** find it useful? [Buy me a coffee on Ko-fi](https://ko-fi.com/thisisbribery).
 
-**Status:** phase 4 test4. Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
+**Status:** phase 4 test5 (adds MOTION SHIFT, the three-band frequency shifter). Every block is in and has been played on hardware. Phase 5 (KNOB MAP, polish) is next.
 
 ## Contents
 
@@ -59,7 +59,7 @@ Needs macOS with `dfu-util` (`brew install dfu-util`) and a USB **data** cable. 
 **First install** (from stock Kali or anything older):
 
 ```bash
-tools/flash-kali.sh --first release/KaliSmash-phase4-test4.bin
+tools/flash-kali.sh --first release/KaliSmash-phase4-test5.bin
 ```
 
 When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It installs the bootloader, catches it as it starts and installs KALI SMASH.
@@ -67,7 +67,7 @@ When it asks: hold **BOOT**, press and release **RESET**, release BOOT. It insta
 **Updates:**
 
 ```bash
-tools/flash-kali.sh release/KaliSmash-phase4-test4.bin
+tools/flash-kali.sh release/KaliSmash-phase4-test5.bin
 ```
 
 While it waits, press **RESET** on the Daisy board (no BOOT). SYSTEM → UPDATE → GO on the module is the button-free route.
@@ -186,9 +186,9 @@ Cutoff runs 20 Hz to 20 kHz; fully CW is off, and the last 3% at the bottom clos
 
 | Setting | Range | What it does |
 |---|---|---|
-| TYPE | FLANGER, CHAOS, ENSEMBLE, PHASER, WARP | |
-| RATE | 0.02-20 Hz | LFO speed |
-| FEEDBACK | -100..+100 | base feedback; the knob's second half pushes it to ±0.97 |
+| TYPE | FLANGER, CHAOS, ENSEMBLE, PHASER, WARP, SHIFT | |
+| RATE | 0.02-20 Hz | LFO speed (SHIFT: glide time, 30 ms-2.4 s) |
+| FEEDBACK | -100..+100 | base feedback; the knob's second half pushes it to ±0.97 (not on SHIFT) |
 | SPREAD | 0-180° | L/R phase offset |
 | CHAOS | 0-100% | randomness (meaning per type, below) |
 | POSITION | POST / PRE | after the LPF, or before Drive A (so the drives distort it) |
@@ -201,6 +201,14 @@ Cutoff runs 20 Hz to 20 kHz; fully CW is off, and the last 3% at the bottom clos
 | ENSEMBLE | string-machine ensemble: three taps, slow and fast wobble 120° apart | jitter on the wobble |
 | PHASER | 6-stage stereo phaser, 150 Hz-3.4 kHz | |
 | WARP | worn tape: wow, flutter, drift; fully wet it's the warped signal alone | how often it drops out and dulls |
+| SHIFT | three-band frequency shifter (below) | morphs the offsets from set A to set B |
+
+**SHIFT** splits the signal at 250 Hz and 2.5 kHz and moves every frequency in each band up or down by a fixed number of Hz. Unlike pitch shifting, the harmonics stop lining up, so it goes metallic, clangy and inside-out; bands moving in opposite directions tear the spectrum apart, and anything pushed below 0 Hz folds back up. It's after the Self-Care lever in Freakshow MISHBY.
+
+- The knob is the lever: 0 to the full offsets over the whole travel, gliding at the RATE time. The first quarter also blends the dry signal in, so small amounts swirl and beat against the dry sound; past a quarter it's the shifted signal alone.
+- CHAOS 0% is set A (low +90, mid -300, high -1500 Hz), 100% is set B (low -190, mid +900, high +2500 Hz), in between morphs. 50% gives low -50, mid +300, high +500.
+- SPREAD turns the right side's shifter oscillators by 0-180°, for width without changing the pitches.
+- FEEDBACK runs the output back in through 30 ms, so every pass shifts again: a rising or falling spiral. It comes in with the knob and isn't pushed to maximum by the knob's second half, unlike the other types. The level is compensated so high feedback doesn't jump in volume.
 
 ### RESO
 

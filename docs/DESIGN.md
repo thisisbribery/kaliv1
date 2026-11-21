@@ -501,3 +501,13 @@ The user installed phase 3 test1 ("actually great!") via flash-kali.sh. The firs
   - One-shot actions live in a separate struct A, so they're never saved.
 - **CPU:** worst case (CHAOS+CHORD, both drives, outs) is 193k instructions per block, against 183k for phase 3.
 - **Size:** 154.6 KB SRAM. sha 3e3a8b2b…, in the ~/Downloads/KaliSmash-phase4-test1/ bundle.
+
+## Phase 4 test5 (2026-11-21)
+
+MOTION type 6, SHIFT: a three-band frequency shifter, after the Self-Care lever in Freakshow MISHBY (studied by decompiling the plugin: per-band Hilbert SSB shift scaled by the lever, two fixed offset sets on a switch; no code taken).
+
+- Per side: ~10 Hz DC blocker, Hilbert allpass pair (Niemitalo 4+4), then 2-pole Butterworth crossovers at 250 Hz and 2.5 kHz run on re and im alike (low = LP, high = HP of the rest, mid = remainder, so the bands sum exactly), one complex oscillator per band, real part out.
+- Knob: shift 0..full offsets over the whole travel, wet over the first quarter, with a power-held blend (dry and shifted are unrelated, so a straight crossfade dipped 3 dB).
+- CHAOS morphs set A {+90, -300, -1500 Hz} to set B {-190, +900, +2500 Hz}. RATE is the glide time (30 ms to 2.4 s, shown in ms/s). SPREAD turns the R oscillators 0-180°. FEEDBACK goes through 30 ms, comes in with the knob (not pushed to max), with (1 - fb²)^0.75 level compensation.
+- Harness test 9: sine in each band, shift within 2 dB of input level, mirror image 49-64 dB down. On the Mac SHIFT costs less than FLANGER or CHAOS.
+- Added as the last type, so saved settings and presets load unchanged.
